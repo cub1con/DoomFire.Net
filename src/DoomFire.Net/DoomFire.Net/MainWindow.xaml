@@ -4,7 +4,11 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="DoomFire.Net" Height="450" Width="800">
+        Title="DoomFire.Net"
+        Closing="MainWindow_OnClosing"
+        Height="1440" Width="2560"
+        WindowState="Maximized"
+        WindowStyle="None">
     <Grid>
         <Image Name="ImgFire" />
     </Grid>
