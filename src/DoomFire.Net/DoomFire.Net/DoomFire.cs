@@ -59,21 +59,7 @@ namespace DoomFireNet
                 FIRE_PIXELS[(Height - 1) * Width + i] = 36;
             }
 
-            //this.Timer.Enabled = true;
-
-            DoFire();
-
-
-            for (var h = 0; h < Height; h++)
-            {
-                for (var w = 0; w < Width; w++)
-                {
-                    var color = FIRE_PIXELS[(h * Width) + w];
-                    DrawPixel(w, h, color);
-                }
-            }
-
-            OnFrameRendered(EventArgs.Empty);
+            this.Timer.Enabled = true;
         }
 
         protected virtual void OnFrameRendered(EventArgs e)
