@@ -23,7 +23,6 @@ namespace DoomFireNet
             {
                 Fire.RenderFrame();
                 drawingContext.DrawImage(Fire.Writer, new Rect(new Point(0, 0), new Size(800, 600)));
-
             }
         }
 
@@ -42,7 +41,7 @@ namespace DoomFireNet
 
         private void Fire_FpsUpdated(object sender, EventArgs e)
         {
-            this.Title = $"DoomFire.Net ~({this.Fire.FPS}fps / {this.Fire.TotalFramesRendered}frames total  / running for {DateTime.Now - this.Fire.RunningSince})";
+            this.Title = $"DoomFire.Net ~({this.Fire.Fps}fps / {this.Fire.TotalFramesRendered}frames total  / running for {DateTime.Now - this.Fire.RunningSince})";
         }
 
         private void Fire_FrameRenderd(object sender, BitmapSource frame)

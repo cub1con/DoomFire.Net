@@ -9,15 +9,21 @@ namespace DoomFireNet
     public class DoomFire
     {
         public BitmapPalette Palette { get; private set; }
-        public WriteableBitmap Writer;
+        public WriteableBitmap Writer { get; private set; }
 
-        private int FramesRendered;
+
+
+        public event EventHandler FpsUpdated;
+        public event EventHandler<BitmapSource> FrameRenderd;
+
+        public int TotalFramesRendered { get; private set; }
+        private int _framesRendered;
 
         private int _fps;
 
-        public int FPS
+        public int Fps
         {
-            get { return _fps;}
+            get => _fps;
             private set
             {
                 _fps = value;
@@ -25,11 +31,7 @@ namespace DoomFireNet
             }
         }
 
-        public int TotalFramesRendered { get; private set; }
-
-        public event EventHandler<BitmapSource> FrameRenderd;
-
-        public event EventHandler FpsUpdated;
+        private DateTime _lastTime; // marks the beginning the measurement began
 
         public DateTime RunningSince { get; private set; } = new DateTime();
 
@@ -37,10 +39,9 @@ namespace DoomFireNet
         public int Height { get; private set; }
         public long MaxTicksPerSecond { get; private set;}
 
-        private Random random = new Random();
+        private readonly Random _random = new Random();
 
-        public int[] FirePixels { get; private set; }
-        private readonly int[] FireRgb = 
+        private readonly int[] _fireRgb = 
         {
             0x07, 0x07, 0x07, 0x1F, 0x07, 0x07, 0x2F, 0x0F, 0x07, 0x47, 0x0F, 0x07, 0x57, 0x17, 0x07, 0x67,
             0x1F, 0x07, 0x77, 0x1F, 0x07, 0x8F, 0x27, 0x07, 0x9F, 0x2F, 0x07, 0xAF, 0x3F, 0x07, 0xBF, 0x47,
@@ -51,48 +52,26 @@ namespace DoomFireNet
             0xB7, 0xB7, 0x37, 0xCF, 0xCF, 0x6F, 0xDF, 0xDF, 0x9F, 0xEF, 0xEF, 0xC7, 0xFF, 0xFF, 0xFF
         };
 
-        DateTime _lastTime; // marks the beginning the measurement began
 
         public DoomFire(int width, int height, int targetFps)
         {
             this.Height = height;
             this.Width = width;
-            this.FirePixels = new int[Width * Height];
+            this.MaxTicksPerSecond = TimeSpan.TicksPerSecond / targetFps;
 
-            int colors = FireRgb.Length / 4;
+            var colors = _fireRgb.Length / 4;
             var e = new System.Windows.Media.Color[colors];
 
-            for (int i = 0; i < colors; i++)
+            for (var i = 0; i < colors; i++)
             {
-                e[i] = System.Windows.Media.Color.FromRgb((byte) this.FireRgb[i * 3 + 0],
-                    (byte) this.FireRgb[i * 3 + 1], (byte) this.FireRgb[i * 3 + 2]);
-
+                e[i] = System.Windows.Media.Color.FromRgb((byte) this._fireRgb[i * 3 + 0],
+                    (byte) this._fireRgb[i * 3 + 1], (byte) this._fireRgb[i * 3 + 2]);
             }
 
             this.Palette = new BitmapPalette(e);
 
-            this.Writer = new WriteableBitmap(Width, Height, 96.0, 96.0, System.Windows.Media.PixelFormats.Indexed8,
-                Palette);
+            this.Writer = new WriteableBitmap(Width, Height, 96.0, 96.0, System.Windows.Media.PixelFormats.Indexed8, Palette);
 
-            this.MaxTicksPerSecond = TimeSpan.TicksPerSecond / targetFps;
-
-            // Fill Color pallete
-            //for (var i = 0; i < this.FireColors.Length; i++)
-            //{
-            //    this.FireColors[i] = Color.FromArgb((byte)this.FireRgb[i * 3 + 0], (byte)this.FireRgb[i * 3 + 1], (byte)this.FireRgb[i * 3 + 2]);
-            //}
-
-            // Preset Frame
-            //for (var i = 0; i < Width * Height; i++)
-            //{
-            //    this.FirePixels[i] = 0;
-            //}
-
-            // Preset "fire source" in frame
-            for (var i = 0; i < Width; i++)
-            {
-                this.FirePixels[(Height - 1) * Width + i] = 36;
-            }
         }
 
         public void RenderFramesAtInterval()
@@ -133,54 +112,6 @@ namespace DoomFireNet
 
 
         private int max_y = 0;
-        private void DoFire()
-        {
-            for (var x = 0; x < this.Width; x++)
-            {
-                for (var y = 1; y < this.Height; y++)
-                {
-                    int offset = y * Width + x;
-
-                    var to = this.FirePixels[offset];
-
-                    if (to == 0)
-                    {
-                        this.FirePixels[offset - Width] = 0;
-                        return;
-                    }
-
-                    var rand = random.Next() % 3;
-
-                    to = (offset - Width) + 1 - rand;
-                    if (to < 0)
-                        to = 0;
-
-                    this.FirePixels[to] = this.FirePixels[offset] - (rand & 1);
-                    if(this.FirePixels[to] != 0)
-                        max_y = y;
-                }
-            }
-        }
-
-        private void SpreadFire(int src)
-        {
-            var to = this.FirePixels[src];
-
-            if (to == 0)
-            {
-                this.FirePixels[src - Width] = 0;
-                return;
-            }
-
-            var rand = random.Next() % 3;
-
-            to = (src - Width) + 1 - rand;
-            if (to < 0)
-                to = 0;
-
-            this.FirePixels[to] = this.FirePixels[src] - (rand & 1);
-
-        }
 
         private bool _initialized = false;
 
@@ -216,21 +147,14 @@ namespace DoomFireNet
                                 SetPixel(pBackBuffer, Writer.BackBufferStride, x, y, y == (this.Height - 2) ? 36 : 0);
                                 continue;
                             }
-                            int pixel = GetPixel(pBackBuffer, Writer.BackBufferStride, x, y);
+                            var pixel = GetPixel(pBackBuffer, Writer.BackBufferStride, x, y);
                             if(pixel == 0) 
                                 SetPixel(pBackBuffer, Writer.BackBufferStride, x, y - 1, 0);
                             else
                             {
-                                var rnd = (int)(Math.Round(random.NextDouble() * 3.0)) & 3;
+                                var rnd = (int)(Math.Round(_random.NextDouble() * 3.0)) & 3;
                                 SetPixel(pBackBuffer, Writer.BackBufferStride, x - rnd + 1, y - 1, pixel - (rnd % 2));
                             }
-                            //int rnd = random.Next();
-                            //int src_off = y * Writer.BackBufferStride + x;
-                            //int* src = (int*) (pBackBuffer + src_off);
-                            //int dst_off = *src == 0 ? src_off - Writer.BackBufferStride 
-                            //    : (src_off - (rnd % 3) + 1);
-                            //int* dst = (int*) (pBackBuffer + dst_off);
-                            //*dst = !_initialized ? (y == this.Height - 2 ? 36 : 0) : *src - (rnd % 2);
                         }
                     }
                 }
@@ -246,26 +170,17 @@ namespace DoomFireNet
                 Writer.Unlock();
             }
 
-            //for (var h = 0; h < this.Height; h++)
-            //{
-            //    for (var w = 0; w < this.Width; w++)
-            //    {
-            //        var color = this.FirePixels[h * Width + w];
-            //        this.DrawPixel(w, h, color);
-            //    }
-            //}
 
-
-            this.FramesRendered++;
+            this._framesRendered++;
             this.TotalFramesRendered++;
             
             this.OnFrameRendered(Writer);
 
-            if (!((DateTime.Now - _lastTime).TotalSeconds >= 1)) return;
+            if (!((DateTime.Now - this._lastTime).TotalSeconds >= 1)) return;
             // one second has elapsed 
-            FPS = this.FramesRendered;
-            this.FramesRendered = 0;
-            _lastTime = DateTime.Now;
+            this.Fps = this._framesRendered;
+            this._framesRendered = 0;
+            this._lastTime = DateTime.Now;
         }
     }
 }
