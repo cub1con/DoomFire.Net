@@ -5,10 +5,10 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="DoomFire.Net"
-        Closing="MainWindow_OnClosing"
-        Height="1440" Width="2560"
+        Closing="MainWindow_OnClosing">
+    <!--Height="1440" Width="2560"
         WindowState="Maximized"
-        WindowStyle="None">
+        WindowStyle="None"-->
     <Grid>
         <Image Name="ImgFire" />
     </Grid>

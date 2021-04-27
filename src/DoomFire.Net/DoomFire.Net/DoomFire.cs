@@ -1,14 +1,15 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Drawing;
 using System.Threading;
-using Color = System.Drawing.Color;
+using System.Windows;
+using System.Windows.Media.Imaging;
 
 namespace DoomFireNet
 {
     public class DoomFire
     {
-        public Bitmap Frame { get; private set; }
+        public BitmapPalette Palette { get; private set; }
+        public WriteableBitmap Writer;
 
         private int FramesRendered;
 
@@ -26,7 +27,7 @@ namespace DoomFireNet
 
         public int TotalFramesRendered { get; private set; }
 
-        public event EventHandler<Bitmap> FrameRenderd;
+        public event EventHandler<BitmapSource> FrameRenderd;
 
         public event EventHandler FpsUpdated;
 
@@ -38,7 +39,6 @@ namespace DoomFireNet
 
         private Random random = new Random();
 
-        public Color[] FireColors { get; private set; } = new Color[37];
         public int[] FirePixels { get; private set; }
         private readonly int[] FireRgb = 
         {
@@ -51,8 +51,6 @@ namespace DoomFireNet
             0xB7, 0xB7, 0x37, 0xCF, 0xCF, 0x6F, 0xDF, 0xDF, 0x9F, 0xEF, 0xEF, 0xC7, 0xFF, 0xFF, 0xFF
         };
 
-
-
         DateTime _lastTime; // marks the beginning the measurement began
 
         public DoomFire(int width, int height, int targetFps)
@@ -61,21 +59,34 @@ namespace DoomFireNet
             this.Width = width;
             this.FirePixels = new int[Width * Height];
 
-            this.Frame = new Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            int colors = FireRgb.Length / 4;
+            var e = new System.Windows.Media.Color[colors];
+
+            for (int i = 0; i < colors; i++)
+            {
+                e[i] = System.Windows.Media.Color.FromRgb((byte) this.FireRgb[i * 3 + 0],
+                    (byte) this.FireRgb[i * 3 + 1], (byte) this.FireRgb[i * 3 + 2]);
+
+            }
+
+            this.Palette = new BitmapPalette(e);
+
+            this.Writer = new WriteableBitmap(Width, Height, 96.0, 96.0, System.Windows.Media.PixelFormats.Indexed8,
+                Palette);
 
             this.MaxTicksPerSecond = TimeSpan.TicksPerSecond / targetFps;
 
             // Fill Color pallete
-            for (var i = 0; i < this.FireColors.Length; i++)
-            {
-                this.FireColors[i] = Color.FromArgb((byte)this.FireRgb[i * 3 + 0], (byte)this.FireRgb[i * 3 + 1], (byte)this.FireRgb[i * 3 + 2]);
-            }
+            //for (var i = 0; i < this.FireColors.Length; i++)
+            //{
+            //    this.FireColors[i] = Color.FromArgb((byte)this.FireRgb[i * 3 + 0], (byte)this.FireRgb[i * 3 + 1], (byte)this.FireRgb[i * 3 + 2]);
+            //}
 
             // Preset Frame
-            for (var i = 0; i < Width * Height; i++)
-            {
-                this.FirePixels[i] = 0;
-            }
+            //for (var i = 0; i < Width * Height; i++)
+            //{
+            //    this.FirePixels[i] = 0;
+            //}
 
             // Preset "fire source" in frame
             for (var i = 0; i < Width; i++)
@@ -94,6 +105,7 @@ namespace DoomFireNet
                 var workTicks = Environment.TickCount - startTicks;
                 var remainingTicks = MaxTicksPerSecond - workTicks;
                 Thread.Sleep(Math.Max(Convert.ToInt32(remainingTicks / 10000), 0));
+
             }
         }
 
@@ -112,7 +124,7 @@ namespace DoomFireNet
             handler?.Invoke(this, EventArgs.Empty);
         }
 
-        protected virtual void OnFrameRendered(Bitmap frame)
+        protected virtual void OnFrameRendered(BitmapSource frame)
         {
             Debug.Print($"Rendered Frame {this.TotalFramesRendered}");
             var handler = FrameRenderd;
@@ -120,13 +132,32 @@ namespace DoomFireNet
         }
 
 
+        private int max_y = 0;
         private void DoFire()
         {
             for (var x = 0; x < this.Width; x++)
             {
                 for (var y = 1; y < this.Height; y++)
                 {
-                    this.SpreadFire(y * this.Width + x);
+                    int offset = y * Width + x;
+
+                    var to = this.FirePixels[offset];
+
+                    if (to == 0)
+                    {
+                        this.FirePixels[offset - Width] = 0;
+                        return;
+                    }
+
+                    var rand = random.Next() % 3;
+
+                    to = (offset - Width) + 1 - rand;
+                    if (to < 0)
+                        to = 0;
+
+                    this.FirePixels[to] = this.FirePixels[offset] - (rand & 1);
+                    if(this.FirePixels[to] != 0)
+                        max_y = y;
                 }
             }
         }
@@ -141,39 +172,94 @@ namespace DoomFireNet
                 return;
             }
 
-            var rand = (random.Next() * 3) & 3;
+            var rand = random.Next() % 3;
 
             to = (src - Width) + 1 - rand;
             if (to < 0)
                 to = 0;
 
             this.FirePixels[to] = this.FirePixels[src] - (rand & 1);
+
         }
 
-        private int DrawPixel(int x, int y, int pixel)
+        private bool _initialized = false;
+
+        public unsafe static int GetPixel(IntPtr pBackBuffer, int pitch, int x, int y)
         {
-            this.Frame.SetPixel(x, y, FireColors[pixel]);
-            return pixel;
+            return *(int*) (pBackBuffer + y * pitch + x);
+        }
+
+        public unsafe static void SetPixel(IntPtr pBackBuffer, int pitch, int x, int y, int i)
+        { 
+            *(int*) (pBackBuffer + y * pitch + x) = i;
         }
 
         public void RenderFrame()
         {
-            this.DoFire();
-
-            for (var h = 0; h < this.Height; h++)
+            try
             {
-                for (var w = 0; w < this.Width; w++)
+                // Reserve the back buffer for updates.
+                Writer.Lock();
+
+                unsafe
                 {
-                    var color = this.FirePixels[h * Width + w];
-                    this.DrawPixel(w, h, color);
+                    // Get a pointer to the back buffer.
+                    IntPtr pBackBuffer = Writer.BackBuffer;
+                    var hello = pBackBuffer + 1;
+
+                    for (var x = 0; x < this.Width; x++)
+                    {
+                        for (var y = 1; y < (this.Height - 1); y++)
+                        {
+                            if (!_initialized)
+                            {
+                                SetPixel(pBackBuffer, Writer.BackBufferStride, x, y, y == (this.Height - 2) ? 36 : 0);
+                                continue;
+                            }
+                            int pixel = GetPixel(pBackBuffer, Writer.BackBufferStride, x, y);
+                            if(pixel == 0) 
+                                SetPixel(pBackBuffer, Writer.BackBufferStride, x, y - 1, 0);
+                            else
+                            {
+                                var rnd = (int)(Math.Round(random.NextDouble() * 3.0)) & 3;
+                                SetPixel(pBackBuffer, Writer.BackBufferStride, x - rnd + 1, y - 1, pixel - (rnd % 2));
+                            }
+                            //int rnd = random.Next();
+                            //int src_off = y * Writer.BackBufferStride + x;
+                            //int* src = (int*) (pBackBuffer + src_off);
+                            //int dst_off = *src == 0 ? src_off - Writer.BackBufferStride 
+                            //    : (src_off - (rnd % 3) + 1);
+                            //int* dst = (int*) (pBackBuffer + dst_off);
+                            //*dst = !_initialized ? (y == this.Height - 2 ? 36 : 0) : *src - (rnd % 2);
+                        }
+                    }
                 }
+
+                _initialized = true;
+
+                // Specify the area of the bitmap that changed.
+                Writer.AddDirtyRect(new Int32Rect(0, max_y, Width, Height - max_y));
             }
+            finally
+            {
+                // Release the back buffer and make it available for display.
+                Writer.Unlock();
+            }
+
+            //for (var h = 0; h < this.Height; h++)
+            //{
+            //    for (var w = 0; w < this.Width; w++)
+            //    {
+            //        var color = this.FirePixels[h * Width + w];
+            //        this.DrawPixel(w, h, color);
+            //    }
+            //}
 
 
             this.FramesRendered++;
             this.TotalFramesRendered++;
             
-            this.OnFrameRendered(Frame);
+            this.OnFrameRendered(Writer);
 
             if (!((DateTime.Now - _lastTime).TotalSeconds >= 1)) return;
             // one second has elapsed 
