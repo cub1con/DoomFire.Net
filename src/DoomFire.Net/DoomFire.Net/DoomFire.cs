@@ -38,7 +38,7 @@ namespace DoomFireNet
 
         public int Width { get; private set; }
         public int Height { get; private set; }
-        public long MaxTicksPerSecond { get; private set;}
+        public int MaxFPS { get; private set;}
 
         private Random random = new Random();
 
@@ -67,7 +67,7 @@ namespace DoomFireNet
 
             this.Frame = new WriteableBitmap(this.Width, this.Height, 96, 96, PixelFormats.Bgra32, null);
 
-            this.MaxTicksPerSecond = TimeSpan.TicksPerSecond / targetFps;
+            this.MaxFPS = targetFps;
 
             // Fill Color pallete
             for (var i = 0; i < this.FireColors.Length; i++)
@@ -91,7 +91,8 @@ namespace DoomFireNet
         public async Task RenderFramesAtInterval()
         {
             this.RunningSince = DateTime.Now;
-            var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(16.6f));
+            double time = 1000f / this.MaxFPS;
+            var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(time));
 
             while (await timer.WaitForNextTickAsync())
             {
@@ -119,6 +120,14 @@ namespace DoomFireNet
         {
             //Debug.Print($"Rendered Frame {this.TotalFramesRendered}");
             this.FrameRenderd.Invoke(this, EventArgs.Empty);
+
+            if ((DateTime.Now - _lastTime).TotalSeconds >= 1)
+            {
+                // one second has elapsed 
+                this.FPS = this.FramesRendered;
+                this.FramesRendered = 0;
+                _lastTime = DateTime.Now;
+            }
         }
 
 
@@ -174,26 +183,15 @@ namespace DoomFireNet
             this.Frame.Unlock();
         }
 
-        public WriteableBitmap RenderFrame()
+        public void RenderFrame()
         {
             this.DoFire();
             this.DrawImage();
-
 
             this.FramesRendered++;
             this.TotalFramesRendered++;
             
             OnFrameRendered();
-
-            if ((DateTime.Now - _lastTime).TotalSeconds >= 1)
-            {
-                // one second has elapsed 
-                FPS = this.FramesRendered;
-                this.FramesRendered = 0;
-                _lastTime = DateTime.Now;
-            }
-            
-            return this.Frame;
         }
     }
 }

@@ -21,7 +21,7 @@ namespace DoomFireNet
             {
                 //this.Fire = new DoomFire((int)this.ActualWidth, (int)this.ActualHeight, 27);
 
-                this.Fire = new DoomFire(800, 640, 15);
+                this.Fire = new DoomFire(800, 640, 24);
                 this.Fire.FrameRenderd += Fire_FrameRenderd;
                 this.Fire.FpsUpdated += Fire_FpsUpdated;
                 //this.ImgFire.Source = this.Fire.Frame;
