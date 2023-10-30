@@ -2,13 +2,17 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Color = System.Drawing.Color;
 
 namespace DoomFireNet
 {
     public class DoomFire
     {
-        public Bitmap Frame { get; private set; }
+        public WriteableBitmap Frame { get; private set; }
 
         private int FramesRendered;
 
@@ -26,7 +30,7 @@ namespace DoomFireNet
 
         public int TotalFramesRendered { get; private set; }
 
-        public event EventHandler<Bitmap> FrameRenderd;
+        public event EventHandler FrameRenderd;
 
         public event EventHandler FpsUpdated;
 
@@ -59,9 +63,9 @@ namespace DoomFireNet
         {
             this.Height = height;
             this.Width = width;
-            this.FirePixels = new int[Width * Height];
+            this.FirePixels = new int[this.Width * this.Height];
 
-            this.Frame = new Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            this.Frame = new WriteableBitmap(this.Width, this.Height, 96, 96, PixelFormats.Bgra32, null);
 
             this.MaxTicksPerSecond = TimeSpan.TicksPerSecond / targetFps;
 
@@ -84,39 +88,37 @@ namespace DoomFireNet
             }
         }
 
-        public void RenderFramesAtInterval()
+        public async Task RenderFramesAtInterval()
+        {
+            this.RunningSince = DateTime.Now;
+            var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(16.6f));
+
+            while (await timer.WaitForNextTickAsync())
+            {
+                RenderFrame();
+            }
+        }
+
+        public async Task RenderFrames()
         {
             this.RunningSince = DateTime.Now;
             while (true)
             {
                 var startTicks = Environment.TickCount;
                 RenderFrame();
-                var workTicks = Environment.TickCount - startTicks;
-                var remainingTicks = MaxTicksPerSecond - workTicks;
-                Thread.Sleep(Math.Max(Convert.ToInt32(remainingTicks / 10000), 0));
-            }
-        }
-
-        public void RenderFrames()
-        {
-            this.RunningSince = DateTime.Now;
-            while (true)
-            {
-                RenderFrame();
+                await Task.Delay(Convert.ToInt32(Environment.TickCount - startTicks));
             }
         }
 
         protected virtual void OnFpsUpdate()
         {
-            var handler = FpsUpdated;
-            handler?.Invoke(this, EventArgs.Empty);
+            this.FpsUpdated.Invoke(this, EventArgs.Empty);
         }
 
-        protected virtual void OnFrameRendered(Bitmap frame)
+        protected virtual void OnFrameRendered()
         {
-            Debug.Print($"Rendered Frame {this.TotalFramesRendered}");
-            var handler = FrameRenderd;
-            handler?.Invoke(this, frame);
+            //Debug.Print($"Rendered Frame {this.TotalFramesRendered}");
+            this.FrameRenderd.Invoke(this, EventArgs.Empty);
         }
 
 
@@ -150,36 +152,48 @@ namespace DoomFireNet
             this.FirePixels[to] = this.FirePixels[src] - (rand & 1);
         }
 
-        private int DrawPixel(int x, int y, int pixel)
+        private void DrawImage()
         {
-            this.Frame.SetPixel(x, y, FireColors[pixel]);
-            return pixel;
-        }
-
-        public void RenderFrame()
-        {
-            this.DoFire();
+            this.Frame.Lock();
 
             for (var h = 0; h < this.Height; h++)
             {
                 for (var w = 0; w < this.Width; w++)
                 {
                     var color = this.FirePixels[h * Width + w];
-                    this.DrawPixel(w, h, color);
+
+                    IntPtr backbuffer = this.Frame.BackBuffer;
+                    backbuffer += h * this.Frame.BackBufferStride;
+                    backbuffer += w * 4;
+                    System.Runtime.InteropServices.Marshal.WriteInt32(backbuffer, this.FireColors[color].ToArgb());
+
                 }
             }
+
+            this.Frame.AddDirtyRect(new Int32Rect(0,0, this.Width,this.Height));
+            this.Frame.Unlock();
+        }
+
+        public WriteableBitmap RenderFrame()
+        {
+            this.DoFire();
+            this.DrawImage();
 
 
             this.FramesRendered++;
             this.TotalFramesRendered++;
             
-            this.OnFrameRendered(Frame);
+            OnFrameRendered();
 
-            if (!((DateTime.Now - _lastTime).TotalSeconds >= 1)) return;
-            // one second has elapsed 
-            FPS = this.FramesRendered;
-            this.FramesRendered = 0;
-            _lastTime = DateTime.Now;
+            if ((DateTime.Now - _lastTime).TotalSeconds >= 1)
+            {
+                // one second has elapsed 
+                FPS = this.FramesRendered;
+                this.FramesRendered = 0;
+                _lastTime = DateTime.Now;
+            }
+            
+            return this.Frame;
         }
     }
 }
